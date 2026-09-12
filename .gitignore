@@ -1,0 +1,12 @@
+.env
+*.env
+__pycache__/
+*.pyc
+.cache/
+cache/
+*.log
+trade_log.csv
+keypair*.json
+venv/
+.venv/
+*.egg-info/

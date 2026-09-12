@@ -1,0 +1,7 @@
+neuprint-python>=0.4.25
+requests>=2.31
+python-dotenv>=1.0
+solders>=0.21
+base58>=2.1
+numpy>=1.26
+pytest>=8.0
