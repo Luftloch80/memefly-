@@ -5,4 +5,5 @@ solders>=0.21
 base58>=2.1
 numpy>=1.26
 flask>=3.0
+websocket-client>=1.7
 pytest>=8.0

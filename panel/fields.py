@@ -45,11 +45,23 @@ FIELDS: list[FieldDef] = [
     FieldDef("SOLANA_RPC_URL", "Solana RPC URL", "Solana wallet", default="https://api.mainnet-beta.solana.com"),
 
     # --- Trading target ---
-    FieldDef("TARGET_TOKEN_MINT", "Target Token Mint", "Trading target", help="The pump.fun token mint address to trade."),
+    FieldDef(
+        "DISCOVERY_MODE", "Autonomous Discovery", "Trading target",
+        type="checkbox", default="false",
+        help="OFF (default): trade only the fixed Target Token Mint below. ON: ignore the mint below and let the bot pick which brand-new pump.fun coin to buy using the connectome signal. Materially riskier -- most new coins are rugs.",
+    ),
+    FieldDef("TARGET_TOKEN_MINT", "Target Token Mint", "Trading target", help="The pump.fun token mint address to trade. Ignored when Autonomous Discovery is on."),
     FieldDef("PUMPPORTAL_POOL", "Pool", "Trading target", type="select", default="pump", options=("pump", "raydium", "auto")),
     FieldDef("PUMPPORTAL_API_URL", "PumpPortal API URL", "Trading target", default="https://pumpportal.fun/api/trade-local"),
     FieldDef("PUMPPORTAL_SLIPPAGE_PCT", "Slippage %", "Trading target", type="number", default="10", step="0.1"),
     FieldDef("PUMPPORTAL_PRIORITY_FEE_SOL", "Priority Fee (SOL)", "Trading target", type="number", default="0.0005", step="0.0001"),
+
+    # --- Discovery filters (only used when Autonomous Discovery is on) ---
+    FieldDef("DISCOVERY_WS_URL", "PumpPortal WebSocket URL", "Discovery filters", default="wss://pumpportal.fun/api/data"),
+    FieldDef("DISCOVERY_MIN_AGE_SECONDS", "Min Coin Age Before Considering (s)", "Discovery filters", type="number", default="300"),
+    FieldDef("DISCOVERY_MAX_AGE_SECONDS", "Max Coin Age Before Ignoring (s)", "Discovery filters", type="number", default="3600"),
+    FieldDef("DISCOVERY_MIN_TRADES", "Min Trades Before Considering", "Discovery filters", type="number", default="20"),
+    FieldDef("DISCOVERY_MAX_CANDIDATES", "Max Candidates Tracked at Once", "Discovery filters", type="number", default="30"),
 
     # --- Risk limits ---
     FieldDef("MAX_TRADE_SOL", "Max SOL per Trade", "Risk limits (SOL)", type="number", default="0.05", step="0.001"),

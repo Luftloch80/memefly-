@@ -38,6 +38,7 @@ class TradeResult:
     filled_size_sol: float
     price_usd: float
     error: str | None = None
+    mint: str | None = None
 
 
 class TradeExecutor(Protocol):
@@ -58,10 +59,16 @@ class DryRunExecutor:
             signature=None,
             filled_size_sol=planned.size_sol,
             price_usd=current_price_usd,
+            mint=planned.mint,
         )
 
 
 class PumpPortalExecutor:
+    """`config.target_token_mint` is only a fallback for the classic
+    fixed-mint mode. In discovery mode, `planned.mint` (set by the risk
+    manager per candidate) is what actually gets traded.
+    """
+
     def __init__(self, config: TradingConfig, keypair: Keypair, rpc_url: str, timeout_seconds: float = 20.0) -> None:
         self.config = config
         self.keypair = keypair
@@ -70,12 +77,16 @@ class PumpPortalExecutor:
 
     def execute(self, planned: PlannedTrade, current_price_usd: float) -> TradeResult:
         if planned.action == Action.HOLD or planned.size_sol <= 0:
-            return TradeResult(True, None, 0.0, current_price_usd)
+            return TradeResult(True, None, 0.0, current_price_usd, mint=planned.mint)
+
+        mint = planned.mint or self.config.target_token_mint
+        if not mint:
+            return TradeResult(False, None, 0.0, current_price_usd, error="no target mint specified", mint=None)
 
         payload = {
             "publicKey": str(self.keypair.pubkey()),
             "action": planned.action.value,  # "buy" or "sell"
-            "mint": self.config.target_token_mint,
+            "mint": mint,
             "amount": planned.size_sol,
             "denominatedInSol": "true",
             "slippage": self.config.slippage_pct,
@@ -90,11 +101,11 @@ class PumpPortalExecutor:
             signed_tx = VersionedTransaction(unsigned_tx.message, [self.keypair])
 
             signature = self._send_raw_transaction(bytes(signed_tx))
-            logger.info("Submitted %s of %.6f SOL, signature=%s", planned.action.value, planned.size_sol, signature)
-            return TradeResult(True, signature, planned.size_sol, current_price_usd)
+            logger.info("Submitted %s of %.6f SOL for %s, signature=%s", planned.action.value, planned.size_sol, mint, signature)
+            return TradeResult(True, signature, planned.size_sol, current_price_usd, mint=mint)
         except Exception as exc:  # noqa: BLE001
             logger.exception("Trade execution failed")
-            return TradeResult(False, None, 0.0, current_price_usd, error=str(exc))
+            return TradeResult(False, None, 0.0, current_price_usd, error=str(exc), mint=mint)
 
     def _send_raw_transaction(self, raw_tx: bytes) -> str:
         body = {

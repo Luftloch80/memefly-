@@ -27,6 +27,11 @@ buy / sell / hold signal.
 - Third-party APIs this project depends on (pump.fun/PumpPortal,
   Dexscreener) are unofficial/community and can change or go down without
   notice — verify current request/response shapes before relying on this.
+- **If you enable `DISCOVERY_MODE`** (autonomous coin picking, see below),
+  the risk goes up again: the bot is now buying into coins that are
+  minutes old with no track record at all. The age/trade-count filters
+  cut down on the very newest, highest-risk tokens; they do not make this
+  safe.
 
 None of this is financial advice.
 
@@ -49,6 +54,7 @@ None of this is financial advice.
 
 ```
 market_data.py   -- fetch price/volume (Dexscreener), rolling features
+discovery.py     -- autonomous coin discovery via PumpPortal's live feed (DISCOVERY_MODE)
 connectome.py    -- fetch a real neuPrint circuit, cache it, LIF simulation
 signal_engine.py -- market features -> neural input -> buy/sell/hold + confidence
 risk_manager.py  -- position sizing, cooldown, stop-loss/take-profit, kill switch
@@ -187,6 +193,45 @@ docker compose up -d
 docker compose logs -f
 docker compose down
 ```
+
+## Autonomous discovery mode
+
+By default the bot trades one coin: whatever you put in
+`TARGET_TOKEN_MINT`. Set `DISCOVERY_MODE=true` in `.env` (or check
+"Autonomous Discovery" in the control panel) to instead let it pick which
+coin to buy itself:
+
+- `discovery.py` connects to PumpPortal's live WebSocket feed
+  (`wss://pumpportal.fun/api/data`, a community-documented, unofficial
+  API — verify it still matches before relying on this) and subscribes to
+  every new pump.fun token as it's created, plus trade events for each
+  one it discovers.
+- Every coin that clears two filters — old enough (`DISCOVERY_MIN_AGE_SECONDS`,
+  default 5 minutes) and has enough observed trades
+  (`DISCOVERY_MIN_TRADES`, default 20) — becomes a candidate. Coins older
+  than `DISCOVERY_MAX_AGE_SECONDS` (default 1 hour) drop off the list.
+- Every cycle, each candidate gets fed through the *same* connectome
+  signal engine used in fixed mode (price/trade-count history →
+  simulated neural input → buy/sell/hold + confidence). The bot buys
+  whichever candidate has the highest bullish score, if any clears
+  `BUY_THRESHOLD`.
+- **Only one position at a time.** Once it buys a coin, it stops
+  evaluating new candidates and just watches that position for its
+  existing stop-loss / take-profit / sell-signal exit logic — the same
+  risk manager as fixed mode, just tracking which mint it currently
+  holds instead of a hardcoded one.
+- Prices for discovery-mode candidates come from PumpPortal's own
+  bonding-curve data (SOL per token), not Dexscreener — brand-new
+  pre-graduation pump.fun tokens usually aren't listed there yet. The
+  dashboard labels these as SOL, not USD.
+- The dashboard shows a "Coins the fly is considering" table each cycle
+  with every candidate's score/confidence/age/trade count, so you can see
+  what it's picking between and why.
+
+Known limitation: the bot's notion of "what am I holding" lives only in
+memory for the life of the process — if it crashes or the container
+restarts mid-position, it forgets, same as fixed mode's position
+tracking. There's no on-chain position reconciliation.
 
 ## Changing the circuit
 

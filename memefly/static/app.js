@@ -1,6 +1,7 @@
 const REFRESH_MS = 5000;
 
 let chart = null;
+let lastPriceUnit = "usd";
 
 function fmtSol(n) {
   if (n === null || n === undefined) return "--";
@@ -11,6 +12,15 @@ function fmtUsd(n) {
   if (n === null || n === undefined) return "--";
   const num = Number(n);
   return num < 0.01 ? `$${num.toFixed(8)}` : `$${num.toFixed(4)}`;
+}
+
+function fmtPrice(n, unit) {
+  if (n === null || n === undefined) return "--";
+  const num = Number(n);
+  if ((unit || lastPriceUnit) === "sol") {
+    return `${num < 0.01 ? num.toFixed(10) : num.toFixed(6)} SOL`;
+  }
+  return fmtUsd(num);
 }
 
 function shortSig(sig) {
@@ -66,9 +76,15 @@ async function refreshState() {
     return;
   }
 
+  lastPriceUnit = state.price_unit || "usd";
+
   const modeBadge = document.getElementById("mode-badge");
   modeBadge.textContent = state.is_live ? "LIVE" : "DRY RUN";
   modeBadge.className = `badge ${state.is_live ? "live" : "dry-run"}`;
+
+  const discoveryBadge = document.getElementById("discovery-badge");
+  discoveryBadge.textContent = state.mode === "discovery" ? "AUTONOMOUS DISCOVERY" : "FIXED COIN";
+  discoveryBadge.className = `badge ${state.mode === "discovery" ? "dry-run" : ""}`;
 
   const haltBadge = document.getElementById("halt-badge");
   if (state.halted) {
@@ -79,8 +95,9 @@ async function refreshState() {
   }
 
   document.getElementById("position-value").textContent = fmtSol(state.position_sol);
+  const heldMint = state.held_mint || (state.mode !== "discovery" ? state.target_token_mint : null);
   document.getElementById("position-sub").textContent = state.entry_price_usd
-    ? `entry @ ${fmtUsd(state.entry_price_usd)}`
+    ? `entry @ ${fmtPrice(state.entry_price_usd, state.price_unit)}${heldMint ? ` — ${heldMint.slice(0, 4)}…${heldMint.slice(-4)}` : ""}`
     : "no open position";
 
   const pnl = state.daily_pnl_sol ?? 0;
@@ -89,10 +106,38 @@ async function refreshState() {
   pnlEl.classList.remove("pnl-positive", "pnl-negative");
   pnlEl.classList.add(pnl >= 0 ? "pnl-positive" : "pnl-negative");
 
-  document.getElementById("price-value").textContent = fmtUsd(state.price_usd);
+  document.getElementById("price-value").textContent = fmtPrice(state.price_usd, state.price_unit);
   document.getElementById("price-sub").textContent = state.target_token_mint
     ? `${state.target_token_mint.slice(0, 4)}…${state.target_token_mint.slice(-4)}`
     : "";
+
+  const candidatesPanel = document.getElementById("candidates-panel");
+  const candidates = state.candidates || [];
+  if (state.mode === "discovery") {
+    candidatesPanel.hidden = false;
+    const body = document.getElementById("candidates-body");
+    if (!candidates.length) {
+      body.innerHTML = '<tr><td colspan="7" class="empty">no candidates cleared the filters yet</td></tr>';
+    } else {
+      body.innerHTML = candidates
+        .map((c) => {
+          const actionClass = c.action === "buy" ? "action-buy" : c.action === "sell" ? "action-sell" : "";
+          const isHeld = c.mint === state.held_mint;
+          return `<tr${isHeld ? ' style="outline:1px solid #a78bfa;"' : ""}>
+            <td>${c.mint.slice(0, 4)}…${c.mint.slice(-4)}${isHeld ? " 🪰" : ""}</td>
+            <td>${c.symbol || "?"}</td>
+            <td class="${actionClass}">${(c.action || "").toUpperCase()}</td>
+            <td>${(c.score || 0).toFixed(2)}</td>
+            <td>${((c.confidence || 0) * 100).toFixed(0)}%</td>
+            <td>${c.trade_count ?? "-"}</td>
+            <td>${c.age_seconds ? Math.round(c.age_seconds / 60) + "m" : "-"}</td>
+          </tr>`;
+        })
+        .join("");
+    }
+  } else {
+    candidatesPanel.hidden = true;
+  }
 
   const sig = state.signal || {};
   const sigEl = document.getElementById("signal-value");
@@ -156,7 +201,7 @@ async function refreshHistory() {
         labels,
         datasets: [
           {
-            label: "Price (USD)",
+            label: lastPriceUnit === "sol" ? "Price (SOL)" : "Price (USD)",
             data: prices,
             borderColor: "#38bdf8",
             backgroundColor: "rgba(56,189,248,0.08)",
@@ -213,11 +258,12 @@ async function refreshTrades() {
       const tx = r.signature
         ? `<a class="tx-link" href="https://solscan.io/tx/${r.signature}" target="_blank" rel="noopener">${shortSig(r.signature)}</a>`
         : "—";
+      const mintLabel = r.mint ? `${r.mint.slice(0, 4)}…${r.mint.slice(-4)}` : "";
       return `<tr>
         <td>${time}</td>
-        <td class="${actionClass}">${r.action.toUpperCase()}</td>
+        <td class="${actionClass}">${r.action.toUpperCase()}${mintLabel ? ` <span style="color:#8b91a7;">${mintLabel}</span>` : ""}</td>
         <td>${Number(r.size_sol).toFixed(4)}</td>
-        <td>${fmtUsd(r.price_usd)}</td>
+        <td>${fmtPrice(r.price_usd)}</td>
         <td>${r.reason}</td>
         <td>${tx}</td>
       </tr>`;
@@ -226,7 +272,10 @@ async function refreshTrades() {
 }
 
 async function refreshAll() {
-  await Promise.all([refreshState(), refreshBalance(), refreshHistory(), refreshTrades()]);
+  // refreshState sets lastPriceUnit, which refreshHistory/refreshTrades
+  // read -- run it first so they don't render with a stale default.
+  await refreshState();
+  await Promise.all([refreshBalance(), refreshHistory(), refreshTrades()]);
 }
 
 refreshAll();

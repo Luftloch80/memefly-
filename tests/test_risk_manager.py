@@ -62,3 +62,40 @@ def test_daily_loss_limit_halts_trading():
     planned = rm.decide(_signal(Action.BUY), current_price_usd=1.0)
     assert planned.action == Action.HOLD
     assert "halted" in planned.reason
+
+
+def test_discovery_mode_cannot_buy_second_mint_while_holding_one():
+    cfg = RiskConfig(max_trade_sol=1.0, max_position_sol=1.0, cooldown_seconds=0)
+    rm = RiskManager(cfg)
+    buy = rm.decide(_signal(Action.BUY), current_price_usd=1.0, mint="mintA")
+    rm.record_fill(buy.action, buy.size_sol, price_usd=1.0, mint="mintA")
+    assert rm.state.held_mint == "mintA"
+
+    blocked = rm.decide(_signal(Action.BUY), current_price_usd=1.0, mint="mintB")
+    assert blocked.action == Action.HOLD
+    assert blocked.reason == "position_open_in_other_mint"
+
+
+def test_discovery_mode_can_buy_after_selling_held_mint():
+    cfg = RiskConfig(max_trade_sol=1.0, max_position_sol=1.0, cooldown_seconds=0)
+    rm = RiskManager(cfg)
+    buy = rm.decide(_signal(Action.BUY), current_price_usd=1.0, mint="mintA")
+    rm.record_fill(buy.action, buy.size_sol, price_usd=1.0, mint="mintA")
+
+    sell = rm.decide(_signal(Action.SELL), current_price_usd=1.0, mint="mintA")
+    rm.record_fill(sell.action, sell.size_sol, price_usd=1.0, mint="mintA")
+    assert rm.state.held_mint is None
+
+    planned = rm.decide(_signal(Action.BUY), current_price_usd=1.0, mint="mintB")
+    assert planned.action == Action.BUY
+    assert planned.mint == "mintB"
+
+
+def test_stop_loss_reports_held_mint():
+    cfg = RiskConfig(max_trade_sol=1.0, max_position_sol=1.0, cooldown_seconds=0, stop_loss_pct=0.2)
+    rm = RiskManager(cfg)
+    buy = rm.decide(_signal(Action.BUY), current_price_usd=1.0, mint="mintA")
+    rm.record_fill(buy.action, buy.size_sol, price_usd=1.0, mint="mintA")
+    planned = rm.decide(_signal(Action.HOLD), current_price_usd=0.75, mint="mintA")
+    assert planned.action == Action.SELL
+    assert planned.mint == "mintA"

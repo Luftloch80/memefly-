@@ -25,6 +25,7 @@ TRADE_LOG_PATH = Path("trade_log.csv")
 
 ACTIVITY_FIELDS = [
     "timestamp",
+    "mint",
     "price_usd",
     "action",
     "score",
@@ -37,7 +38,7 @@ ACTIVITY_FIELDS = [
     "halted",
 ]
 
-TRADE_FIELDS = ["timestamp", "action", "size_sol", "price_usd", "reason", "signature"]
+TRADE_FIELDS = ["timestamp", "mint", "action", "size_sol", "price_usd", "reason", "signature"]
 
 
 @dataclass
@@ -53,6 +54,7 @@ class ActivityRow:
     position_sol: float
     daily_pnl_sol: float
     halted: bool
+    mint: str = ""
 
 
 def _append_csv_row(path: Path, fieldnames: list[str], row: dict[str, Any]) -> None:
@@ -75,12 +77,14 @@ def append_trade(
     reason: str,
     signature: str | None,
     path: Path = TRADE_LOG_PATH,
+    mint: str = "",
 ) -> None:
     _append_csv_row(
         path,
         TRADE_FIELDS,
         {
             "timestamp": time.time(),
+            "mint": mint,
             "action": action,
             "size_sol": size_sol,
             "price_usd": price_usd,

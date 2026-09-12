@@ -19,6 +19,7 @@
       </div>
       <div class="badges">
         <span id="mode-badge" class="badge">--</span>
+        <span id="discovery-badge" class="badge">--</span>
         <span id="halt-badge" class="badge badge-hidden">HALTED</span>
       </div>
     </header>
@@ -78,6 +79,31 @@
       </div>
     </section>
 
+    <section class="panel" id="candidates-panel" hidden>
+      <div class="panel-header">
+        <h2>Coins the fly is considering</h2>
+        <p class="panel-sub">Autonomous discovery mode: every candidate that cleared the age/trade-count filters this cycle, ranked by score.</p>
+      </div>
+      <div class="table-wrap">
+        <table id="candidates-table">
+          <thead>
+            <tr>
+              <th>Mint</th>
+              <th>Symbol</th>
+              <th>Signal</th>
+              <th>Score</th>
+              <th>Confidence</th>
+              <th>Trades</th>
+              <th>Age</th>
+            </tr>
+          </thead>
+          <tbody id="candidates-body">
+            <tr><td colspan="7" class="empty">no candidates yet</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="panel">
       <div class="panel-header">
         <h2>Price &amp; PnL history</h2>
@@ -96,7 +122,7 @@
               <th>Time</th>
               <th>Action</th>
               <th>Size (SOL)</th>
-              <th>Price (USD)</th>
+              <th>Price</th>
               <th>Reason</th>
               <th>Tx</th>
             </tr>

@@ -69,6 +69,25 @@ class RiskConfig:
 
 
 @dataclass(frozen=True)
+class DiscoveryConfig:
+    """Autonomous coin discovery: instead of trading a fixed
+    TARGET_TOKEN_MINT, the bot watches PumpPortal's live feed of newly
+    created pump.fun tokens and picks which one (if any) to buy using the
+    same connectome signal. Off by default -- this is materially riskier
+    than trading a coin you picked yourself, since most brand-new pump.fun
+    tokens are rugs. The age/trade-count filters reduce, but do not
+    eliminate, that risk.
+    """
+
+    enabled: bool = field(default_factory=lambda: _get_bool("DISCOVERY_MODE", False))
+    ws_url: str = field(default_factory=lambda: os.getenv("DISCOVERY_WS_URL", "wss://pumpportal.fun/api/data"))
+    min_age_seconds: int = field(default_factory=lambda: _get_int("DISCOVERY_MIN_AGE_SECONDS", 300))
+    max_age_seconds: int = field(default_factory=lambda: _get_int("DISCOVERY_MAX_AGE_SECONDS", 3600))
+    min_trades: int = field(default_factory=lambda: _get_int("DISCOVERY_MIN_TRADES", 20))
+    max_candidates: int = field(default_factory=lambda: _get_int("DISCOVERY_MAX_CANDIDATES", 30))
+
+
+@dataclass(frozen=True)
 class SignalConfig:
     buy_threshold: float = field(default_factory=lambda: _get_float("BUY_THRESHOLD", 0.2))
     sell_threshold: float = field(default_factory=lambda: _get_float("SELL_THRESHOLD", -0.2))
@@ -91,6 +110,7 @@ class Config:
     neuprint: NeuprintConfig = field(default_factory=NeuprintConfig)
     solana: SolanaConfig = field(default_factory=SolanaConfig)
     trading: TradingConfig = field(default_factory=TradingConfig)
+    discovery: DiscoveryConfig = field(default_factory=DiscoveryConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
     signal: SignalConfig = field(default_factory=SignalConfig)
     safety: SafetyConfig = field(default_factory=SafetyConfig)
