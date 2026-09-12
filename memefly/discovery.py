@@ -140,6 +140,7 @@ class PumpPortalTokenFeed:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._subscribed_trades: set[str] = set()
+        self._messages_seen = 0
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -168,6 +169,7 @@ class PumpPortalTokenFeed:
         import websocket
 
         ws = websocket.create_connection(self.config.ws_url, timeout=30)
+        logger.info("PumpPortal feed connected (%s)", self.config.ws_url)
         try:
             ws.send(json.dumps({"method": "subscribeNewToken"}))
             self._subscribed_trades.clear()
@@ -191,6 +193,22 @@ class PumpPortalTokenFeed:
                     msg = json.loads(raw)
                 except json.JSONDecodeError:
                     continue
+
+                self._messages_seen += 1
+                if self._messages_seen <= 5:
+                    # Prints the raw shape of the first few messages so you
+                    # can confirm real traffic is flowing and see whether
+                    # PumpPortal's message format still matches what
+                    # _handle_message expects (txType/mint/vSolInBondingCurve/
+                    # vTokensInBondingCurve).
+                    logger.info("PumpPortal message #%d: %s", self._messages_seen, msg)
+                elif self._messages_seen % 200 == 0:
+                    logger.info(
+                        "PumpPortal feed: %d messages received so far, %d tokens in registry",
+                        self._messages_seen,
+                        self.registry.size(),
+                    )
+
                 self._handle_message(msg, ws)
                 protected_mint = self.protected_mint_getter()
                 protect = frozenset({protected_mint}) if protected_mint else frozenset()
