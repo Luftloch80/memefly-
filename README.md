@@ -57,6 +57,9 @@ wallet.py        -- local keypair loading
 state_store.py   -- state.json / activity_log.csv / trade_log.csv shared with the dashboard
 main.py          -- CLI + the loop tying it all together
 dashboard.py     -- read-only Flask web dashboard (templates/, static/)
+
+panel/           -- local control panel: edit .env, build/start/stop Docker (see below)
+Dockerfile, entrypoint.sh, docker-compose.yml, .dockerignore
 ```
 
 ## Setup
@@ -132,6 +135,58 @@ python -m memefly.dashboard
 ```
 Then open http://127.0.0.1:8765. It auto-refreshes every 5 seconds.
 Pass `--host`/`--port` to change where it listens.
+
+## Running on a Raspberry Pi with Docker
+
+The `Dockerfile` uses `python:3.11-slim`, which is multi-arch — building it
+**on the Pi itself** produces a native arm64 (or armv7) image with no
+cross-compilation setup. A modern 64-bit Raspberry Pi OS (Bookworm, Pi 4/5,
+2GB+ RAM) is recommended; some dependencies (e.g. `solders`) may not have
+prebuilt wheels for 32-bit armv7, in which case pip will need to compile
+them from source, which is slow on a Pi and may need a Rust toolchain
+added to the Dockerfile.
+
+1. **Install Docker + Compose on the Pi** (if not already):
+   ```
+   curl -fsSL https://get.docker.com | sh
+   sudo usermod -aG docker $USER   # log out/in after this
+   ```
+2. **Get the code onto the Pi** (clone the repo) and `cd` into it.
+3. **Run the control panel** (plain Python, not containerized — it's the
+   thing that builds/runs the containers, so it stays on the host):
+   ```
+   python3 -m venv .venv && source .venv/bin/activate
+   pip install flask python-dotenv
+   python -m panel.app
+   ```
+   It prints a URL with an access token, e.g.
+   `http://127.0.0.1:8766/?token=...`. Open that in a browser on the Pi,
+   or tunnel/forward the port over SSH if you're working from another
+   machine — don't expose this port on your LAN or the internet as-is,
+   since anyone with the URL can overwrite your `.env` and trigger builds.
+4. **Fill in the form** (neuPrint token, Solana wallet, target token
+   mint, risk limits, safety switches) and click **Save Settings** — this
+   writes `.env` (0600 permissions, gitignored, never sent anywhere else).
+5. Click **Build Image** — runs `docker compose build` and streams the
+   log. Then **Start** — runs `docker compose up -d`, launching the `bot`
+   and `dashboard` containers, sharing a Docker volume for `state.json` /
+   the logs / the connectome cache. **Stop** runs `docker compose down`.
+6. Once running, the trading-loop dashboard from the section above is at
+   `http://<pi-address>:8765/`.
+
+The bot container's `entrypoint.sh` re-checks `LIVE_TRADING` and
+`I_UNDERSTAND_THE_RISK` itself before ever adding `--live` to its command
+— the same two switches gate live trading whether you run this in Docker
+or directly with `python -m memefly.main`.
+
+You can skip the panel entirely and drive Compose by hand if you prefer:
+```
+cp .env.example .env   # fill it in
+docker compose build
+docker compose up -d
+docker compose logs -f
+docker compose down
+```
 
 ## Changing the circuit
 

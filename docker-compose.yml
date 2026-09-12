@@ -1,0 +1,24 @@
+services:
+  bot:
+    build: .
+    image: memefly:latest
+    env_file: .env
+    volumes:
+      - memefly-data:/app/data
+    restart: unless-stopped
+
+  dashboard:
+    build: .
+    image: memefly:latest
+    env_file: .env
+    command: ["python", "-m", "memefly.dashboard", "--host", "0.0.0.0", "--port", "8765"]
+    volumes:
+      - memefly-data:/app/data
+    ports:
+      - "8765:8765"
+    restart: unless-stopped
+    depends_on:
+      - bot
+
+volumes:
+  memefly-data:

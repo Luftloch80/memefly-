@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>memefly control panel</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand">
+        <span class="brand-emoji">🪰</span>
+        <div>
+          <h1>memefly control panel</h1>
+          <p class="subtitle">configure &middot; build &middot; start on Raspberry Pi (or any Docker host)</p>
+        </div>
+      </div>
+    </header>
+
+    <div class="notice">
+      <strong>Local, privileged tool.</strong> This writes secrets to <code>.env</code> and runs
+      <code>docker compose</code> on this machine. Keep it on 127.0.0.1 / your LAN only.
+      Live trading additionally requires <em>both</em> safety switches below <strong>and</strong>
+      the bot container re-checks them itself before ever placing a real order.
+    </div>
+
+    <form id="env-form">
+      {% for section in sections %}
+      <section class="panel">
+        <div class="panel-header"><h2>{{ section }}</h2></div>
+        <div class="field-grid">
+          {% for f in fields_by_section[section] %}
+          <div class="field">
+            <label for="{{ f.name }}">{{ f.label }}</label>
+            {% if f.type == "password" %}
+              <input type="password" id="{{ f.name }}" name="{{ f.name }}"
+                     placeholder="{{ 'saved — leave blank to keep it' if secret_flags.get(f.name) else 'not set' }}"
+                     autocomplete="off" />
+            {% elif f.type == "checkbox" %}
+              <label class="checkbox-row">
+                <input type="checkbox" id="{{ f.name }}" name="{{ f.name }}" {{ values[f.name] }} />
+                <span>enabled</span>
+              </label>
+            {% elif f.type == "select" %}
+              <select id="{{ f.name }}" name="{{ f.name }}">
+                {% for opt in f.options %}
+                <option value="{{ opt }}" {{ "selected" if values[f.name] == opt else "" }}>{{ opt }}</option>
+                {% endfor %}
+              </select>
+            {% elif f.type == "number" %}
+              <input type="number" step="{{ f.step or 'any' }}" id="{{ f.name }}" name="{{ f.name }}" value="{{ values[f.name] }}" />
+            {% else %}
+              <input type="text" id="{{ f.name }}" name="{{ f.name }}" value="{{ values[f.name] }}" autocomplete="off" />
+            {% endif %}
+            {% if f.help %}<p class="field-help">{{ f.help }}</p>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </section>
+      {% endfor %}
+
+      <div class="actions">
+        <button type="submit" class="btn btn-primary">Save Settings</button>
+        <span id="save-status" class="save-status"></span>
+      </div>
+    </form>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Build &amp; run</h2>
+        <p class="panel-sub">Runs on this machine's own CPU architecture — build directly on the Pi for a native arm image.</p>
+      </div>
+      <div class="actions">
+        <button id="btn-build" class="btn">Build Image</button>
+        <button id="btn-start" class="btn btn-primary">Start</button>
+        <button id="btn-stop" class="btn btn-danger">Stop</button>
+        <span id="container-status" class="save-status"></span>
+      </div>
+      <pre id="job-log" class="job-log">idle</pre>
+    </section>
+  </div>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
