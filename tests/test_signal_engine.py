@@ -34,6 +34,8 @@ def test_all_approach_spikes_yields_buy():
     signal = engine.compute_signal(_features())
     assert signal.action == Action.BUY
     assert signal.score > 0
+    assert signal.approach_neuron_spikes == (10.0, 10.0)
+    assert signal.avoidance_neuron_spikes == (0.0, 0.0)
 
 
 def test_all_avoidance_spikes_yields_sell():

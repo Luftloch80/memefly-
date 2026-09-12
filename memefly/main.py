@@ -9,14 +9,13 @@ Missing any one of these falls back to dry-run, no exceptions.
 from __future__ import annotations
 
 import argparse
-import csv
 import logging
 import sys
 import time
-from pathlib import Path
 
+from memefly import state_store
 from memefly.config import load_config
-from memefly.connectome import ConnectomeError, fetch_circuit
+from memefly.connectome import CircuitGraph, ConnectomeError, fetch_circuit
 from memefly.market_data import DexscreenerProvider, MarketHistory
 from memefly.risk_manager import RiskManager
 from memefly.signal_engine import Action, SignalEngine
@@ -25,49 +24,57 @@ from memefly.wallet import WalletError, load_keypair
 
 logger = logging.getLogger("memefly")
 
-TRADE_LOG_PATH = Path("trade_log.csv")
 
-
-def _log_trade_row(action: Action, size_sol: float, price_usd: float, reason: str, signature: str | None) -> None:
-    is_new = not TRADE_LOG_PATH.exists()
-    with open(TRADE_LOG_PATH, "a", newline="", encoding="utf-8") as fh:
-        writer = csv.writer(fh)
-        if is_new:
-            writer.writerow(["timestamp", "action", "size_sol", "price_usd", "reason", "signature"])
-        writer.writerow([time.time(), action.value, size_sol, price_usd, reason, signature or ""])
-
-
-def build_executor(args: argparse.Namespace, cfg) -> TradeExecutor:
+def build_executor(args: argparse.Namespace, cfg) -> tuple[TradeExecutor, bool, str | None]:
+    """Returns (executor, is_live, wallet_pubkey)."""
     if not args.live:
         logger.info("Running in DRY RUN mode (pass --live plus env safety switches for real trades).")
-        return DryRunExecutor()
+        return DryRunExecutor(), False, _try_pubkey(cfg)
 
     if not cfg.safety.cleared_for_live:
         logger.error(
             "Refusing to trade live: --live was passed but LIVE_TRADING=true and "
             "I_UNDERSTAND_THE_RISK=yes are not both set in your .env. Falling back to dry run."
         )
-        return DryRunExecutor()
+        return DryRunExecutor(), False, _try_pubkey(cfg)
 
     if not cfg.trading.target_token_mint:
         logger.error("TARGET_TOKEN_MINT is not set; falling back to dry run.")
-        return DryRunExecutor()
+        return DryRunExecutor(), False, _try_pubkey(cfg)
 
     try:
         keypair = load_keypair(cfg.solana)
     except WalletError as exc:
         logger.error("Wallet error, falling back to dry run: %s", exc)
-        return DryRunExecutor()
+        return DryRunExecutor(), False, None
 
     logger.warning(
         "LIVE TRADING ENABLED. Wallet %s will send real transactions on pump.fun for mint %s.",
         keypair.pubkey(),
         cfg.trading.target_token_mint,
     )
-    return PumpPortalExecutor(cfg.trading, keypair, cfg.solana.rpc_url)
+    return PumpPortalExecutor(cfg.trading, keypair, cfg.solana.rpc_url), True, str(keypair.pubkey())
 
 
-def run_once(cfg, engine: SignalEngine, risk_manager: RiskManager, executor: TradeExecutor, history: MarketHistory, market) -> None:
+def _try_pubkey(cfg) -> str | None:
+    """Best-effort pubkey lookup for the dashboard even when not trading live."""
+    try:
+        return str(load_keypair(cfg.solana).pubkey())
+    except WalletError:
+        return None
+
+
+def run_once(
+    cfg,
+    engine: SignalEngine,
+    risk_manager: RiskManager,
+    executor: TradeExecutor,
+    history: MarketHistory,
+    market,
+    graph: CircuitGraph,
+    is_live: bool,
+    wallet_pubkey: str | None,
+) -> None:
     snapshot = market.fetch(cfg.trading.target_token_mint)
     features = history.push(snapshot)
 
@@ -85,17 +92,68 @@ def run_once(cfg, engine: SignalEngine, risk_manager: RiskManager, executor: Tra
     )
 
     planned = risk_manager.decide(signal, snapshot.price_usd)
-    if planned.action == Action.HOLD:
+
+    signature = None
+    if planned.action != Action.HOLD:
+        result = executor.execute(planned, snapshot.price_usd)
+        if result.success:
+            risk_manager.record_fill(planned.action, result.filled_size_sol, result.price_usd)
+            signature = result.signature
+            state_store.append_trade(
+                planned.action.value, result.filled_size_sol, result.price_usd, planned.reason, signature
+            )
+        else:
+            logger.error("Trade failed: %s", result.error)
+    else:
         logger.info("HOLD (%s)", planned.reason)
-        return
 
-    result = executor.execute(planned, snapshot.price_usd)
-    if not result.success:
-        logger.error("Trade failed: %s", result.error)
-        return
-
-    risk_manager.record_fill(planned.action, result.filled_size_sol, result.price_usd)
-    _log_trade_row(planned.action, result.filled_size_sol, result.price_usd, planned.reason, result.signature)
+    s = risk_manager.state
+    state_store.record_activity(
+        state_store.ActivityRow(
+            timestamp=time.time(),
+            price_usd=snapshot.price_usd,
+            action=signal.action.value,
+            score=signal.score,
+            confidence=signal.confidence,
+            approach_spikes=signal.approach_spikes,
+            avoidance_spikes=signal.avoidance_spikes,
+            reason=planned.reason,
+            position_sol=s.position_sol,
+            daily_pnl_sol=s.daily_pnl_sol,
+            halted=s.halted,
+        )
+    )
+    state_store.write_state(
+        {
+            "timestamp": time.time(),
+            "is_live": is_live,
+            "wallet_pubkey": wallet_pubkey,
+            "target_token_mint": cfg.trading.target_token_mint,
+            "solana_rpc_url": cfg.solana.rpc_url,
+            "price_usd": snapshot.price_usd,
+            "position_sol": s.position_sol,
+            "entry_price_usd": s.entry_price_usd,
+            "daily_pnl_sol": s.daily_pnl_sol,
+            "halted": s.halted,
+            "halt_reason": s.halt_reason,
+            "last_trade_signature": signature,
+            "signal": {
+                "action": signal.action.value,
+                "score": signal.score,
+                "confidence": signal.confidence,
+                "approach_spikes": signal.approach_spikes,
+                "avoidance_spikes": signal.avoidance_spikes,
+                "approach_neuron_spikes": list(signal.approach_neuron_spikes),
+                "avoidance_neuron_spikes": list(signal.avoidance_neuron_spikes),
+            },
+            "circuit": {
+                "dataset": cfg.neuprint.dataset,
+                "num_neurons": len(graph.body_ids),
+                "num_input_neurons": len(graph.input_indices),
+                "num_output_neurons": len(graph.output_indices),
+            },
+        }
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -118,7 +176,7 @@ def main(argv: list[str] | None = None) -> int:
 
     engine = SignalEngine(graph, cfg.signal)
     risk_manager = RiskManager(cfg.risk)
-    executor = build_executor(args, cfg)
+    executor, is_live, wallet_pubkey = build_executor(args, cfg)
     market = DexscreenerProvider()
     history = MarketHistory()
 
@@ -131,7 +189,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         while True:
             try:
-                run_once(cfg, engine, risk_manager, executor, history, market)
+                run_once(cfg, engine, risk_manager, executor, history, market, graph, is_live, wallet_pubkey)
             except Exception:  # noqa: BLE001
                 logger.exception("Iteration failed, will retry next cycle.")
             if args.once:

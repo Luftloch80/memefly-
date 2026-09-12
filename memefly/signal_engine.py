@@ -36,6 +36,9 @@ class TradeSignal:
     confidence: float  # in [0, 1]
     approach_spikes: float
     avoidance_spikes: float
+    # Per-neuron spike counts for the dashboard's neuron-activity view.
+    approach_neuron_spikes: tuple[float, ...] = ()
+    avoidance_neuron_spikes: tuple[float, ...] = ()
 
 
 def features_to_input_currents(features: MarketFeatures, n_inputs: int, current_scale: float = 2.0) -> np.ndarray:
@@ -74,8 +77,10 @@ class SignalEngine:
         currents = features_to_input_currents(features, len(self.graph.input_indices))
         spike_counts = self.simulator.run(currents)
 
-        approach = float(spike_counts[self.approach_indices].sum())
-        avoidance = float(spike_counts[self.avoidance_indices].sum())
+        approach_neuron_spikes = spike_counts[self.approach_indices]
+        avoidance_neuron_spikes = spike_counts[self.avoidance_indices]
+        approach = float(approach_neuron_spikes.sum())
+        avoidance = float(avoidance_neuron_spikes.sum())
         total = approach + avoidance
 
         score = 0.0 if total == 0 else (approach - avoidance) / total
@@ -94,4 +99,6 @@ class SignalEngine:
             confidence=confidence,
             approach_spikes=approach,
             avoidance_spikes=avoidance,
+            approach_neuron_spikes=tuple(approach_neuron_spikes.tolist()),
+            avoidance_neuron_spikes=tuple(avoidance_neuron_spikes.tolist()),
         )

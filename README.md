@@ -54,7 +54,9 @@ signal_engine.py -- market features -> neural input -> buy/sell/hold + confidenc
 risk_manager.py  -- position sizing, cooldown, stop-loss/take-profit, kill switch
 trader.py        -- DryRunExecutor (default) / PumpPortalExecutor (real orders)
 wallet.py        -- local keypair loading
+state_store.py   -- state.json / activity_log.csv / trade_log.csv shared with the dashboard
 main.py          -- CLI + the loop tying it all together
+dashboard.py     -- read-only Flask web dashboard (templates/, static/)
 ```
 
 ## Setup
@@ -103,6 +105,33 @@ python -m memefly.main --live
 ```
 
 Trades (real or dry-run) are appended to `trade_log.csv` (gitignored).
+Every iteration (trade or not) also updates `state.json` and appends to
+`activity_log.csv` (also gitignored) — that's what the dashboard reads.
+
+## Dashboard
+
+A stylish, read-only web UI showing wallet balance, open position, daily
+PnL, price/PnL history, which "brain cells" (output neurons) fired
+approach vs. avoidance spikes for the latest signal, and a table of
+recent trades with Solscan links.
+
+It runs as its **own process**, separate from the trading loop, and only
+talks to it through the local `state.json` / `activity_log.csv` /
+`trade_log.csv` files — it never signs or sends transactions. The one
+live network call it makes is a public, read-only `getBalance` RPC
+lookup for your wallet's balance.
+
+Run the trading loop in one terminal:
+```
+python -m memefly.main
+```
+
+And the dashboard in another:
+```
+python -m memefly.dashboard
+```
+Then open http://127.0.0.1:8765. It auto-refreshes every 5 seconds.
+Pass `--host`/`--port` to change where it listens.
 
 ## Changing the circuit
 

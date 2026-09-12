@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>memefly dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand">
+        <span class="brand-emoji">🪰</span>
+        <div>
+          <h1>memefly</h1>
+          <p class="subtitle">fly connectome &rarr; buy / sell / hold</p>
+        </div>
+      </div>
+      <div class="badges">
+        <span id="mode-badge" class="badge">--</span>
+        <span id="halt-badge" class="badge badge-hidden">HALTED</span>
+      </div>
+    </header>
+
+    <section class="cards">
+      <div class="card">
+        <div class="card-label">Wallet Balance</div>
+        <div class="card-value" id="balance-value">--</div>
+        <div class="card-sub" id="balance-sub">&nbsp;</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Open Position</div>
+        <div class="card-value" id="position-value">--</div>
+        <div class="card-sub" id="position-sub">&nbsp;</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Daily PnL</div>
+        <div class="card-value" id="pnl-value">--</div>
+        <div class="card-sub" id="pnl-sub">&nbsp;</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Token Price</div>
+        <div class="card-value" id="price-value">--</div>
+        <div class="card-sub" id="price-sub">&nbsp;</div>
+      </div>
+      <div class="card card-signal">
+        <div class="card-label">Last Signal</div>
+        <div class="card-value" id="signal-value">--</div>
+        <div class="card-sub" id="signal-sub">&nbsp;</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Brain cells in use</h2>
+        <p class="panel-sub" id="circuit-sub">loading circuit info&hellip;</p>
+      </div>
+      <div class="neuron-groups">
+        <div class="neuron-group">
+          <div class="neuron-group-title approach">approach (bullish)</div>
+          <div class="neuron-grid" id="approach-grid"></div>
+          <div class="neuron-total" id="approach-total">0 spikes</div>
+        </div>
+        <div class="score-meter">
+          <div class="score-track">
+            <div class="score-fill" id="score-fill"></div>
+            <div class="score-zero"></div>
+          </div>
+          <div class="score-label" id="score-label">score: 0.00</div>
+          <div class="confidence-label" id="confidence-label">confidence: 0%</div>
+        </div>
+        <div class="neuron-group">
+          <div class="neuron-group-title avoidance">avoidance (bearish)</div>
+          <div class="neuron-grid" id="avoidance-grid"></div>
+          <div class="neuron-total" id="avoidance-total">0 spikes</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Price &amp; PnL history</h2>
+      </div>
+      <canvas id="history-chart" height="90"></canvas>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Recent trades</h2>
+      </div>
+      <div class="table-wrap">
+        <table id="trades-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Action</th>
+              <th>Size (SOL)</th>
+              <th>Price (USD)</th>
+              <th>Reason</th>
+              <th>Tx</th>
+            </tr>
+          </thead>
+          <tbody id="trades-body">
+            <tr><td colspan="6" class="empty">no trades yet</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer>
+      <p>Not financial advice. Neuron spikes here have no genuine predictive relationship to token prices.</p>
+    </footer>
+  </div>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
