@@ -124,6 +124,16 @@ PnL, price/PnL history, which "brain cells" (output neurons) fired
 approach vs. avoidance spikes for the latest signal, and a table of
 recent trades with Solscan links.
 
+Right under the header is a plain-English "what is the fly doing" line
+(e.g. *"Scanning pump.fun for new coins (7 tracked total). None have
+cleared the age/trade-count filters yet."* or *"Holding AbCd…1234. Score
+0.31, confidence 62% -- signal hold."*) generated fresh every cycle from
+the same data the rest of the dashboard shows — it's a narration of the
+decision, not a separate source of truth. If it says nothing has
+happened yet in discovery mode, that's usually just the age/trade-count
+filters doing their job — see "Autonomous discovery mode" below for how
+long that can take.
+
 It runs as its **own process**, separate from the trading loop, and only
 talks to it through the local `state.json` / `activity_log.csv` /
 `trade_log.csv` files — it never signs or sends transactions. The one

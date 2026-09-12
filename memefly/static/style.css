@@ -81,6 +81,36 @@ header {
 .badge.halted { color: var(--down); border-color: var(--down); background: rgba(248, 113, 113, 0.1); }
 .badge-hidden { display: none; }
 
+.thought-box {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: linear-gradient(135deg, rgba(167, 139, 250, 0.12), rgba(56, 189, 248, 0.08));
+  border: 1px solid rgba(167, 139, 250, 0.35);
+  border-radius: 16px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+}
+
+.thought-emoji {
+  font-size: 26px;
+  flex-shrink: 0;
+}
+
+.thought-box p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.4;
+  flex: 1;
+}
+
+.thought-updated {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 .cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));

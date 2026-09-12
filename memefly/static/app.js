@@ -78,6 +78,11 @@ async function refreshState() {
 
   lastPriceUnit = state.price_unit || "usd";
 
+  document.getElementById("thought-text").textContent = state.thought || "Waiting for the first cycle…";
+  if (state.timestamp) {
+    document.getElementById("thought-updated").textContent = `updated ${new Date(state.timestamp * 1000).toLocaleTimeString()}`;
+  }
+
   const modeBadge = document.getElementById("mode-badge");
   modeBadge.textContent = state.is_live ? "LIVE" : "DRY RUN";
   modeBadge.className = `badge ${state.is_live ? "live" : "dry-run"}`;

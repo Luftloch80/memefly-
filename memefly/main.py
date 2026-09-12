@@ -72,6 +72,67 @@ def _try_pubkey(cfg) -> str | None:
         return None
 
 
+def _narrate(
+    mode: str,
+    signal: TradeSignal,
+    planned: PlannedTrade,
+    candidates: list[dict],
+    held_mint: str | None,
+    halted: bool,
+    halt_reason: str,
+    tracked_count: int,
+) -> str:
+    """Turns the raw decision into a plain-English sentence for the
+    dashboard's "what is the fly doing" panel.
+    """
+    if halted:
+        return f"Halted: {halt_reason.replace('_', ' ')}. Not trading until the daily limit resets."
+
+    reason = planned.reason.replace("_", " ")
+
+    if mode == "fixed":
+        if planned.action == Action.BUY:
+            return f"Score {signal.score:.2f} crossed the buy threshold. Buying {planned.size_sol:.4f} SOL."
+        if planned.action == Action.SELL:
+            return f"Selling {planned.size_sol:.4f} SOL ({reason})."
+        return f"Watching the market. Score {signal.score:.2f}, confidence {signal.confidence * 100:.0f}% -- not enough to act ({reason})."
+
+    # discovery mode
+    if held_mint:
+        short = f"{held_mint[:4]}…{held_mint[-4:]}"
+        if planned.action == Action.SELL:
+            return f"Selling out of {short} ({reason})."
+        return f"Holding {short}. Score {signal.score:.2f}, confidence {signal.confidence * 100:.0f}% -- {reason}."
+
+    if planned.action == Action.BUY and planned.mint:
+        short = f"{planned.mint[:4]}…{planned.mint[-4:]}"
+        return f"Found something promising ({short}, score {signal.score:.2f}). Buying in."
+
+    if not candidates:
+        return (
+            f"Scanning pump.fun for new coins ({tracked_count} tracked total). None have cleared the "
+            "age/trade-count filters yet -- this can take a while after a fresh start."
+        )
+
+    best = candidates[0]
+    symbol = best.get("symbol") or "?"
+    return (
+        f"Looked at {len(candidates)} coin(s); {symbol} looks most interesting "
+        f"(score {best['score']:.2f}, confidence {best['confidence'] * 100:.0f}%), but nothing crossed the buy threshold."
+    )
+
+
+def _update_thought(thought: str) -> None:
+    """Updates just the narration text between full decision cycles (e.g.
+    while still warming up market history), without clobbering the rest
+    of the last full state snapshot.
+    """
+    state = state_store.read_state() or {}
+    state["thought"] = thought
+    state["timestamp"] = time.time()
+    state_store.write_state(state)
+
+
 def _execute_and_persist(
     cfg,
     risk_manager: RiskManager,
@@ -85,6 +146,7 @@ def _execute_and_persist(
     planned: PlannedTrade,
     mode: str,
     candidates: list[dict] | None = None,
+    tracked_count: int = 0,
 ) -> None:
     signature = None
     if planned.action != Action.HOLD:
@@ -101,6 +163,7 @@ def _execute_and_persist(
         logger.info("HOLD (%s)", planned.reason)
 
     s = risk_manager.state
+    thought = _narrate(mode, signal, planned, candidates or [], s.held_mint, s.halted, s.halt_reason, tracked_count)
     state_store.record_activity(
         state_store.ActivityRow(
             timestamp=time.time(),
@@ -120,6 +183,7 @@ def _execute_and_persist(
     state_store.write_state(
         {
             "timestamp": time.time(),
+            "thought": thought,
             "mode": mode,
             "price_unit": "sol" if mode == "discovery" else "usd",
             "is_live": is_live,
@@ -171,6 +235,7 @@ def run_once_fixed(
 
     if len(history) < 2:
         logger.info("Warming up market history (%d/2 snapshots)...", len(history))
+        _update_thought(f"Just started -- collecting a second price sample for {mint[:4]}…{mint[-4:]} before deciding anything.")
         return
 
     signal = engine.compute_signal(features)
@@ -197,19 +262,23 @@ def run_once_discovery(
     dc = cfg.discovery
 
     if s.held_mint:
+        short = f"{s.held_mint[:4]}…{s.held_mint[-4:]}"
         held = feed.registry.get(s.held_mint)
         if held is None:
             logger.warning("Held mint %s dropped out of the feed registry; can't get a price update this cycle.", s.held_mint)
+            _update_thought(f"Holding {short} but lost its price feed for a moment -- will retry next cycle.")
             return
         history = histories.setdefault(s.held_mint, MarketHistory())
         features = history.push(MarketSnapshot(price_usd=held.price_sol, volume_24h_usd=float(held.trade_count), timestamp=now))
         if len(history) < 2:
+            _update_thought(f"Just bought {short} -- collecting a second price sample before evaluating an exit.")
             return
         signal = engine.compute_signal(features)
         planned = risk_manager.decide(signal, held.price_sol, mint=s.held_mint)
         logger.info("held=%s signal=%s score=%.3f price=%.10f SOL", s.held_mint, signal.action.value, signal.score, held.price_sol)
         _execute_and_persist(
-            cfg, risk_manager, executor, graph, is_live, wallet_pubkey, s.held_mint, held.price_sol, signal, planned, mode="discovery"
+            cfg, risk_manager, executor, graph, is_live, wallet_pubkey, s.held_mint, held.price_sol, signal, planned, mode="discovery",
+            tracked_count=feed.registry.size(),
         )
         return
 
@@ -250,15 +319,21 @@ def run_once_discovery(
     summary.sort(key=lambda x: x["score"] * x["confidence"], reverse=True)
     logger.info("Discovery: %d tokens tracked, %d evaluated, best=%s", feed.registry.size(), len(summary), best_mint)
 
+    tracked_count = feed.registry.size()
+
     if best_mint is None:
         no_signal = TradeSignal(action=Action.HOLD, score=0.0, confidence=0.0, approach_spikes=0.0, avoidance_spikes=0.0)
         no_trade = PlannedTrade(Action.HOLD, 0.0, "no_buy_candidate")
-        _execute_and_persist(cfg, risk_manager, executor, graph, is_live, wallet_pubkey, "", 0.0, no_signal, no_trade, mode="discovery", candidates=summary[:20])
+        _execute_and_persist(
+            cfg, risk_manager, executor, graph, is_live, wallet_pubkey, "", 0.0, no_signal, no_trade, mode="discovery",
+            candidates=summary[:20], tracked_count=tracked_count,
+        )
         return
 
     planned = risk_manager.decide(best_signal, best_price, mint=best_mint)
     _execute_and_persist(
-        cfg, risk_manager, executor, graph, is_live, wallet_pubkey, best_mint, best_price, best_signal, planned, mode="discovery", candidates=summary[:20]
+        cfg, risk_manager, executor, graph, is_live, wallet_pubkey, best_mint, best_price, best_signal, planned, mode="discovery",
+        candidates=summary[:20], tracked_count=tracked_count,
     )
 
 
